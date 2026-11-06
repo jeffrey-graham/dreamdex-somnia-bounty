@@ -128,27 +128,27 @@ npm run doctor
 
 ## X posts
 
-Below are the 3 X (Twitter) posts prepared for the Feedback Track and MVP Track tagging `@DreamDEXSomnia` (see [`SUBMISSION_GUIDE.md`](./SUBMISSION_GUIDE.md) for posting workflow):
+Below are the 3 live X (Twitter) posts tagging `@DreamDEXSomnia` for the Feedback Track and MVP Track:
 
-### Post 1 — Build Start & On-Chain Discovery
-> Kicking off our build for the @DreamDEXSomnia Perps Builder Bounty on @Somnia_Network Tokyo/Hideki Testnet (chainId 50383)! 🛠️
->
-> Auditing all 22 live PerpPool contracts, MarginBank cross-margin math & `@somnia-chain/markets-sdk` to build a Quant Funding-Rate Arbitrage & Risk CLI Agent. #Somnia #dreamDEX
+1. **Post 1 (Build Start & On-Chain Discovery):** [https://x.com/TobiasManstooth/status/2118767797517824195](https://x.com/TobiasManstooth/status/2118767797517824195)
+   > Kicking off our build for the @DreamDEXSomnia Perps Builder Bounty on @Somnia_Network Tokyo/Hideki Testnet (chainId 50383)! 🛠️
+   >
+   > Auditing all 22 live PerpPool contracts, MarginBank cross-margin math & `@somnia-chain/markets-sdk` to build a Quant Funding-Rate Arbitrage & Risk CLI Agent. #Somnia #dreamDEX
 
-### Post 2 — Mid-Progress Update (Track 1 Bug Hunt Findings)
-> Mid-build update on @DreamDEXSomnia Perps! 🔍
->
-> Our deep audit of `dreamdex-bot-kit` & Hideki Testnet uncovered 12 reproducible issues:
-> • IEEE-754 `touch * 1e18` price truncation
-> • Inverted TP/SL on existing shorts in `perp-starter`
-> • `ADLT-PERP` null `stopRegistry` crash
-> • 40x/10x on-chain leverage vs 20x/5x docs!
+2. **Post 2 (Mid-Progress Update — Track 1 Bug Hunt Findings):** [https://x.com/TobiasManstooth/status/2118767864907804931](https://x.com/TobiasManstooth/status/2118767864907804931)
+   > Mid-build update on @DreamDEXSomnia Perps! 🔍
+   >
+   > Our deep audit of `dreamdex-bot-kit` & Hideki Testnet uncovered 12 reproducible issues:
+   > • IEEE-754 `touch * 1e18` price truncation
+   > • Inverted TP/SL on existing shorts in `perp-starter`
+   > • `ADLT-PERP` null `stopRegistry` crash
+   > • 40x/10x on-chain leverage vs 20x/5x docs!
 
-### Post 3 — Final Showcase (Track 1 + Track 2 MVP Complete)
-> Shipped our @DreamDEXSomnia Perps Builder Bounty submission! 🚀
->
-> ✅ Track 1: 12 verified bug reports (4 Critical, 6 Major, 2 Normal) with live Hideki RPC/Indexer proofs
-> ✅ Track 2: Quant Funding-Carry Scanner (+151% APR on BTC-PERP), Cross-Margin Liq Auditor & Bracket Simulator!
+3. **Post 3 (Final Showcase — Track 1 + Track 2 MVP Complete):** [https://x.com/TobiasManstooth/status/2118767950043681199](https://x.com/TobiasManstooth/status/2118767950043681199)
+   > Shipped our @DreamDEXSomnia Perps Builder Bounty submission! 🚀
+   >
+   > ✅ Track 1: 12 verified bug reports (4 Critical, 6 Major, 2 Normal) in feedback/ with live Hideki RPC/Indexer proofs
+   > ✅ Track 2: Quant Funding-Carry Scanner (+151% APR on BTC-PERP), Cross-Margin Liq Auditor & Bracket Simulator!
 
 ---
 
