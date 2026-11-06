@@ -1,0 +1,23 @@
+{
+  "name": "dreamdex-perps-quant-agent",
+  "version": "1.0.0",
+  "description": "Somnia dreamDEX Perps Quantitative Trading, Risk & Funding-Rate Arbitrage CLI Agent + 12-Issue Technical Audit (DoraHacks Bounty Submission)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "scan": "tsx src/cli.ts scan",
+    "audit": "tsx src/cli.ts audit",
+    "simulate": "tsx src/cli.ts simulate",
+    "doctor": "tsx src/cli.ts doctor",
+    "test": "tsx --test tests/quant-agent.test.ts"
+  },
+  "dependencies": {
+    "@somnia-chain/markets-sdk": "0.32.1",
+    "viem": "^2.47.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
