@@ -1,4 +1,4 @@
-# Somnia dreamDEX Perps Quantitative Trading, Risk & Funding-Rate Arbitrage CLI Agent + 12-Issue Technical Audit
+# Somnia dreamDEX Perps Quantitative Trading, Risk & Funding-Rate Arbitrage CLI Agent + 16-Issue Technical Audit
 
 > **DoraHacks Bounty Submission**: [dreamDEX Perps Builder Bounty ($3,000 Pool)](https://dorahacks.io/hackathon/dreamdex-perps-bounty/detail)  
 > **Tracks Covered**: **Track 1 (Feedback Track — $1,500 Pool)** + **Track 2 (MVP Track — 3 × $500 Pool)**  
@@ -12,8 +12,8 @@
 This repository delivers a dual-track engineering submission for the **Somnia dreamDEX Perps Builder Bounty**:
 
 1. **Track 1 — Comprehensive Technical Audit & Bug Reports ([`feedback/`](./feedback/))**:
-   - **12 genuine, reproducible technical bugs** discovered across `somnia-chain/dreamdex-bot-kit` (`@dreamdex/perp-core`, `perp-starter`, `perp-maker`, `perp-guard`, `perp-funding`, `@dreamdex/core`), `@somnia-chain/markets-sdk` (`0.30.0` & `0.32.1`), the Somnia Tokyo/Hideki Testnet GraphQL Indexer (`https://hideki-dev.smk.somnia.host/v1/graphql`), REST API endpoints (`stg.api`, `api.testnet`, `api.dreamdex.io`), and the official Perps Testnet documentation.
-   - Includes **4 Critical**, **6 Major**, and **2 Normal** issues, each in its own self-contained Markdown report inside [`feedback/`](./feedback/) following the exact DoraHacks template (`Severity`, `Area`, `Steps to reproduce`, `Expected`, `Actual`, `Evidence`, `Environment`) with live RPC/Indexer/CLI outputs and transaction hashes.
+   - **16 genuine, reproducible technical bugs** discovered across `somnia-chain/dreamdex-bot-kit` (`@dreamdex/perp-core`, `perp-starter`, `perp-maker`, `perp-guard`, `perp-funding`, `@dreamdex/core`), `@somnia-chain/markets-sdk` (`0.30.0` & `0.32.1`), the Somnia Tokyo/Hideki Testnet GraphQL Indexer (`https://hideki-dev.smk.somnia.host/v1/graphql`), REST API endpoints (`stg.api`, `api.testnet`, `api.dreamdex.io`), and the official Perps Testnet documentation.
+   - Includes **4 Critical**, **10 Major**, and **2 Normal** issues, each in its own self-contained Markdown report inside [`feedback/`](./feedback/) following the exact DoraHacks template (`Severity`, `Area`, `Steps to reproduce`, `Expected`, `Actual`, `Evidence`, `Environment`) with live RPC/Indexer/CLI outputs and transaction hashes.
 
 2. **Track 2 — Quantitative Trading, Risk & Funding-Rate Arbitrage CLI Agent ([`src/`](./src/))**:
    - A production-grade CLI agent for Somnia dreamDEX Perps that **directly fixes every SDK/strategy defect uncovered in Track 1** while providing institutional-grade quantitative analytics across all 22 live Somnia Tokyo/Hideki perpetual markets:
@@ -55,7 +55,7 @@ flowchart TD
 
 ---
 
-## Track 1: 12 Verified Technical Bug Reports ([`feedback/`](./feedback/))
+## Track 1: 16 Verified Technical Bug Reports ([`feedback/`](./feedback/))
 
 Every issue in [`feedback/`](./feedback/) was reproduced against live Somnia Tokyo/Hideki Testnet (`50383`), Shannon Testnet (`50312`), `@somnia-chain/markets-sdk` (`0.30.0` & `0.32.1`), and `somnia-chain/dreamdex-bot-kit`:
 
@@ -73,6 +73,10 @@ Every issue in [`feedback/`](./feedback/) was reproduced against live Somnia Tok
 | **10** | [`issue-10-perp-starter-silent-unprotected-position-on-stop-trigger-failure.md`](./feedback/issue-10-perp-starter-silent-unprotected-position-on-stop-trigger-failure.md) | **Major** | SDK / Contracts | Stop orders frequently transition to `TRIGGER_FAILED` (`NoFill`, `PlacementFailed`, `ReduceOnlyBelowMinQty`), but `isRealStopFailure` in `perp-core` is dead code and `perp-starter` only queries `PENDING` stops, leaving positions open with `0 stop(s) armed`. |
 | **11** | [`issue-11-docs-domain-redirect-strips-deep-links.md`](./feedback/issue-11-docs-domain-redirect-strips-deep-links.md) | **Normal** | Docs / Web App | Every deep link under `https://docs.dreamdex.io/<path>` used in `dreamdex-bot-kit` returns `HTTP 308` to `https://app.dreamdex.io/docs`, stripping the path and dropping developers on the generic landing page. |
 | **12** | [`issue-12-funding-zero-rate-and-unknown-window-false-long-signal.md`](./feedback/issue-12-funding-zero-rate-and-unknown-window-false-long-signal.md) | **Normal** | SDK | `viewOf()` and `fundingSide()` in `@dreamdex/perp-core` default `paidSide` to `"long"` when `rate === 0n` or `windowSec <= 0`, emitting false `"long"` signals on zero-funding markets. |
+| **13** | [`issue-13-ws-orderbook-unsequenced-microblock-crossed-book-drift.md`](./feedback/issue-13-ws-orderbook-unsequenced-microblock-crossed-book-drift.md) | **Major** | SDK / WebSocket | `DreamDexWs` & `MarketMaker.onBook()` drop burst WebSocket updates during in-flight RPC calls with no dirty flag, and `Pool.topOfBook()` fires two unpinned `eth_call`s across Somnia micro-blocks that yield crossed books (`bestBid >= bestAsk`, negative `spreadBps`) that bypass `maxBookSpreadBps`. |
+| **14** | [`issue-14-nonce-manager-inflight-race-and-non-atomic-cancel-replace-collision.md`](./feedback/issue-14-nonce-manager-inflight-race-and-non-atomic-cancel-replace-collision.md) | **Major** | SDK | `NonceManager.acquire()` checks `maxInFlight` outside the serialized queue mutex and races with unserialized `resync()` calls to hand out duplicate nonces; `cancelQuietly` in `perp-core` swallows RPC/nonce errors before `perp-maker` wipes `resting`, stacking orphan quotes on the book. |
+| **15** | [`issue-15-adl-bankruptcy-boundary-rounding-and-zero-liquidation-price-sentinel.md`](./feedback/issue-15-adl-bankruptcy-boundary-rounding-and-zero-liquidation-price-sentinel.md) | **Major** | SDK | `perpLiquidationPrice` returns `0n` instead of `null` on over-collateralized longs, `getMaxPerpOrderSize` caps opposite-side orders on over-cap positions at `maxPositionSize + \|pos\|` while misreporting `limitedBy: "initialMargin"`, and `adl.classify` truncates sub-unit positive PnL to `0n`. |
+| **16** | [`issue-16-funding-accrual-timestamp-skew-and-reconnect-stale-fallback-flip.md`](./feedback/issue-16-funding-accrual-timestamp-skew-and-reconnect-stale-fallback-flip.md) | **Major** | SDK | `getPerpState().nextFundingAt` returns timestamps hours in the past on lazily-settled pools (`-17,247s` on Hideki), while `liveFunding()` silently falls back to stale GraphQL indexer rates on transient RPC errors and ignores `isFundingStale`, triggering false carry exits in `perp-funding`. |
 
 ---
 
@@ -156,7 +160,7 @@ Below are the 3 live X (Twitter) posts tagging `@DreamDEXSomnia` for the Feedbac
 
 ```text
 dreamdex-somnia-bounty/
-├── feedback/                                  # Track 1: 12 Verified Technical Bug Reports
+├── feedback/                                  # Track 1: 16 Verified Technical Bug Reports
 │   ├── issue-01-perp-starter-inverted-tp-sl-on-existing-short.md
 │   ├── issue-02-ieee754-float-price-truncation-in-perp-core.md
 │   ├── issue-03-adlt-perp-null-stop-registry-crash.md
@@ -168,7 +172,11 @@ dreamdex-somnia-bounty/
 │   ├── issue-09-perp-maker-deadlock-after-fill-or-postonly-skip.md
 │   ├── issue-10-perp-starter-silent-unprotected-position-on-stop-trigger-failure.md
 │   ├── issue-11-docs-domain-redirect-strips-deep-links.md
-│   └── issue-12-funding-zero-rate-and-unknown-window-false-long-signal.md
+│   ├── issue-12-funding-zero-rate-and-unknown-window-false-long-signal.md
+│   ├── issue-13-ws-orderbook-unsequenced-microblock-crossed-book-drift.md
+│   ├── issue-14-nonce-manager-inflight-race-and-non-atomic-cancel-replace-collision.md
+│   ├── issue-15-adl-bankruptcy-boundary-rounding-and-zero-liquidation-price-sentinel.md
+│   └── issue-16-funding-accrual-timestamp-skew-and-reconnect-stale-fallback-flip.md
 ├── src/                                       # Track 2: Quant Trading, Risk & Funding-Arb CLI Agent
 │   ├── quant-math.ts                          # Exact string->BigInt math, liq solver, bracket & carry engine
 │   ├── client.ts                              # Resilient Hideki/Shannon SDK client & risk auditor
