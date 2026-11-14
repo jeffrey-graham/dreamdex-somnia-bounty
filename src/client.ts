@@ -321,13 +321,18 @@ export async function safeGetStopFeeSomi(
   stopRegistry: Address | null | undefined,
 ): Promise<number | null> {
   if (!stopRegistry) return null;
-  try {
-    const feeWei =
-      await qClient.exchange.client.getPerpStopOrderSomiPayment(stopRegistry);
-    return rawToNumber(feeWei, 18);
-  } catch {
-    return null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const feeWei =
+        await qClient.exchange.client.getPerpStopOrderSomiPayment(stopRegistry);
+      return rawToNumber(feeWei, 18);
+    } catch {
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 250 * attempt));
+      }
+    }
   }
+  return null;
 }
 
 /**
