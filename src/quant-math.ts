@@ -9,6 +9,10 @@
  * - Issue #2: IEEE-754 float multiplication (`Math.round(touch * 1e18)`) & `toRaw()` 9-decimal cap
  * - Issue #9: Symmetric floor tick rounding on maker ask quotes
  * - Issue #12: False `"long"` funding payment signal when `rateX18 === 0n` or `windowSeconds <= 0`
+ * - Issue #13: Crossed/one-sided top-of-book micro-block drift (`sanitizeTopOfBook`)
+ * - Issue #14: Mutex-serialized `maxInFlight` & `resync()` nonce allocator (`SerializedNonceAllocator`)
+ * - Issue #15: `null` sentinel (instead of `0n` / `$0.00`) on unliquidatable over-collateralized longs
+ * - Issue #16: Lazy-settlement `nextFundingAt` grid alignment & RPC-error `known: false` guard (`evaluateFundingFreshness`)
  */
 
 export type PositionSide = "long" | "short";
@@ -370,7 +374,8 @@ export function computeExactLiquidationPrice(params: {
   }
 
   if (numerator <= 0n || denominator <= 0n) {
-    // Long is over-collateralized (>100% equity backing), so liquidation price is <= 0
+    // Fixes Issue #15: Over-collateralized long (>100% equity backing) has no positive liquidation
+    // price — return `null` rather than a false `0n` ($0.00) numeric trigger sentinel.
     return {
       side,
       sizeRaw: absSize,
@@ -378,10 +383,10 @@ export function computeExactLiquidationPrice(params: {
       markPriceRaw,
       equityRaw: accountEquityRaw,
       maintenanceMarginBps,
-      liquidationPriceRaw: 0n,
-      liquidationPriceHuman: 0,
-      distanceToLiqBps: 10_000,
-      distanceToLiqPct: 100,
+      liquidationPriceRaw: null,
+      liquidationPriceHuman: null,
+      distanceToLiqBps: null,
+      distanceToLiqPct: null,
       isAtRisk: false,
     };
   }
@@ -573,5 +578,205 @@ export function computeOptimalPositionSize(params: {
     rawUnalignedSize,
     alignedSizeRaw,
     alignedSizeHuman: rawToNumber(alignedSizeRaw, params.sizeDecimals),
+  };
+}
+
+/**
+ * Validates top-of-book bid/ask quotes against Somnia sub-second micro-block drift.
+ *
+ * Fixes Issue #13:
+ * - Rejects crossed books (`bestBid >= bestAsk`) produced by unpinned two-leg RPC reads
+ *   that would otherwise yield a negative `spreadBps` and bypass `maxBookSpreadBps`.
+ * - Rejects one-sided books (`bestBid === null || bestAsk === null`) from two-sided quoting.
+ */
+export function sanitizeTopOfBook(params: {
+  bestBid: number | null | undefined;
+  bestAsk: number | null | undefined;
+  maxBookSpreadBps?: number;
+}): {
+  valid: boolean;
+  crossed: boolean;
+  oneSided: boolean;
+  mid: number | null;
+  spreadBps: number | null;
+} {
+  const bid = params.bestBid ?? null;
+  const ask = params.bestAsk ?? null;
+  const maxSpread = params.maxBookSpreadBps ?? 200;
+
+  if (bid === null || ask === null || bid <= 0 || ask <= 0) {
+    return {
+      valid: false,
+      crossed: false,
+      oneSided: bid !== ask,
+      mid: null,
+      spreadBps: null,
+    };
+  }
+
+  if (bid >= ask) {
+    return {
+      valid: false,
+      crossed: true,
+      oneSided: false,
+      mid: null,
+      spreadBps: null,
+    };
+  }
+
+  const mid = (bid + ask) / 2;
+  const spreadBps = ((ask - bid) / mid) * 10_000;
+  return {
+    valid: spreadBps <= maxSpread,
+    crossed: false,
+    oneSided: false,
+    mid,
+    spreadBps,
+  };
+}
+
+/**
+ * Mutex-serialized nonce allocator with bounded in-flight backpressure and safe `resync()`.
+ *
+ * Fixes Issue #14:
+ * - Evaluates `inFlight >= maxInFlight` *inside* the serialized mutex queue so concurrent
+ *   callers never burst past `maxInFlight`.
+ * - Serializes `resync()` on the same mutex queue and preserves live `inFlight` tracking so
+ *   concurrent `acquire()` + `resync()` calls never emit duplicate nonces.
+ */
+export class SerializedNonceAllocator {
+  private next: number | null = null;
+  private inFlight = 0;
+  private queue: Promise<void> = Promise.resolve();
+  private slotWaiters: Array<() => void> = [];
+
+  constructor(
+    private readonly fetchPendingNonce: () => Promise<number>,
+    private readonly maxInFlight = 4,
+  ) {}
+
+  private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const prev = this.queue;
+    this.queue = prev.then(() => gate);
+    return prev.then(async () => {
+      try {
+        return await fn();
+      } finally {
+        release();
+      }
+    });
+  }
+
+  get currentInFlight(): number {
+    return this.inFlight;
+  }
+
+  async acquire(): Promise<number> {
+    return this.runExclusive(async () => {
+      while (this.inFlight >= this.maxInFlight) {
+        await new Promise<void>((resolve) => this.slotWaiters.push(resolve));
+      }
+      if (this.next === null) {
+        this.next = await this.fetchPendingNonce();
+      }
+      const allocated = this.next;
+      this.next += 1;
+      this.inFlight += 1;
+      return allocated;
+    });
+  }
+
+  releaseSlot(): void {
+    if (this.inFlight > 0) {
+      this.inFlight -= 1;
+    }
+    const waiter = this.slotWaiters.shift();
+    if (waiter) waiter();
+  }
+
+  async resync(): Promise<number> {
+    return this.runExclusive(async () => {
+      const chainPending = await this.fetchPendingNonce();
+      this.next =
+        this.next !== null ? Math.max(chainPending, this.next - this.inFlight + this.inFlight) : chainPending;
+      // Ensure `next` never rewinds below `chainPending`
+      if (chainPending > this.next) {
+        this.next = chainPending;
+      }
+      return this.next;
+    });
+  }
+}
+
+/**
+ * Evaluates on-chain lazy funding freshness and refuses silent fallback to stale indexer rows.
+ *
+ * Fixes Issue #16:
+ * - Flags `fundingOverdue` when `nowSec >= lastFundingUpdateAt + fundingIntervalSec` and snaps
+ *   `effectiveNextFundingAt` forward onto the live interval grid instead of returning a past timestamp.
+ * - Returns `known: false` on transient RPC failure rather than silently falling back to stale
+ *   GraphQL indexer `fundingRate` values that could trigger false carry exits.
+ */
+export function evaluateFundingFreshness(params: {
+  rpcSucceeded: boolean;
+  lastFundingUpdateAtSec?: bigint;
+  fundingIntervalSec?: number;
+  nowSec?: bigint;
+  rateX18?: bigint;
+  openInterestRaw?: bigint;
+}): {
+  known: boolean;
+  stale: boolean;
+  fundingOverdue: boolean;
+  forgivenZeroOi: boolean;
+  effectiveNextFundingAtSec: bigint | null;
+  rateX18: bigint | null;
+} {
+  if (!params.rpcSucceeded) {
+    return {
+      known: false,
+      stale: true,
+      fundingOverdue: false,
+      forgivenZeroOi: false,
+      effectiveNextFundingAtSec: null,
+      rateX18: null,
+    };
+  }
+
+  const interval = BigInt(Math.max(0, params.fundingIntervalSec ?? 0));
+  const lastUpdate = params.lastFundingUpdateAtSec ?? 0n;
+  const now = params.nowSec ?? BigInt(Math.floor(Date.now() / 1000));
+  const oi = params.openInterestRaw ?? 1n;
+
+  if (interval <= 0n) {
+    return {
+      known: false,
+      stale: true,
+      fundingOverdue: false,
+      forgivenZeroOi: oi === 0n,
+      effectiveNextFundingAtSec: null,
+      rateX18: params.rateX18 ?? 0n,
+    };
+  }
+
+  const rawNext = lastUpdate + interval;
+  const fundingOverdue = now >= rawNext;
+  const intervalsElapsed = now > lastUpdate ? (now - lastUpdate) / interval : 0n;
+  const stale = intervalsElapsed >= 2n;
+  const effectiveNext = fundingOverdue
+    ? lastUpdate + (intervalsElapsed + 1n) * interval
+    : rawNext;
+
+  return {
+    known: true,
+    stale,
+    fundingOverdue,
+    forgivenZeroOi: oi === 0n,
+    effectiveNextFundingAtSec: effectiveNext,
+    rateX18: params.rateX18 ?? 0n,
   };
 }

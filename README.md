@@ -91,7 +91,7 @@ npm install
 ```bash
 npm test
 ```
-Verifies all 8 test suites covering exact decimal-to-`bigint` conversion (`parseDecimalToRaw`), asymmetric maker bid/ask tick alignment, existing-short bracket protection (`computeBracketPrices`), cross-margin liquidation price solver (`computeExactLiquidationPrice`), funding carry breakeven math, and live Hideki RPC null-safe `stopRegistry` handling.
+Verifies all 12 test cases covering exact decimal-to-`bigint` conversion (`parseDecimalToRaw`), asymmetric maker bid/ask tick alignment, existing-short bracket protection (`computeBracketPrices`), cross-margin liquidation price solver (`computeExactLiquidationPrice` + `null` unliquidatable sentinel), crossed-book micro-block rejection (`sanitizeTopOfBook`), mutex-serialized nonce backpressure (`SerializedNonceAllocator`), lazy funding freshness (`evaluateFundingFreshness`), funding carry breakeven math, and live Hideki RPC null-safe `stopRegistry` handling.
 
 ### 3. Scan All 22 Live Somnia Hideki Perpetual Markets
 ```bash
@@ -182,7 +182,7 @@ dreamdex-somnia-bounty/
 │   ├── client.ts                              # Resilient Hideki/Shannon SDK client & risk auditor
 │   └── cli.ts                                 # CLI commands: scan, audit, simulate, doctor
 ├── tests/
-│   └── quant-agent.test.ts                    # 8 unit + live Hideki RPC integration tests
+│   └── quant-agent.test.ts                    # 12 unit + live Hideki RPC integration tests
 ├── data/                                      # Captured live Somnia Hideki (50383) telemetry
 │   ├── live_market_scan.json                  # Live scan of all 22 Hideki PerpPools
 │   ├── live_account_risk_audit.json           # Live cross-margin audit of active Hideki accounts

@@ -1,7 +1,7 @@
 /**
  * @file tests/quant-agent.test.ts
  * @description Unit and live Somnia Hideki Testnet (50383) integration test suite
- * verifying our fixes for the 12 audited bugs and core quantitative trading math.
+ * verifying our fixes for all 16 audited bugs and core quantitative trading math.
  */
 
 import assert from "node:assert/strict";
@@ -15,6 +15,7 @@ import {
   safeGetStopFeeSomi,
 } from "../src/client.js";
 import {
+  SerializedNonceAllocator,
   alignDirectionalPrice,
   alignLotFloor,
   alignPriceCeil,
@@ -23,8 +24,10 @@ import {
   computeExactLiquidationPrice,
   computeFundingCarryMetrics,
   computeOptimalPositionSize,
+  evaluateFundingFreshness,
   formatRawToDecimal,
   parseDecimalToRaw,
+  sanitizeTopOfBook,
 } from "../src/quant-math.js";
 
 describe("Track 1 Bug-Fix Verification & Quantitative Math Suite", () => {
@@ -201,6 +204,105 @@ describe("Track 1 Bug-Fix Verification & Quantitative Math Suite", () => {
 
     assert.ok(shortLiq.liquidationPriceHuman !== null);
     assert.ok(Math.abs(shortLiq.liquidationPriceHuman - 81481.481481) < 0.001);
+  });
+
+  it("Issue #13 Fix: sanitizeTopOfBook rejects crossed micro-block books (bestBid >= bestAsk) and one-sided books", () => {
+    const crossed = sanitizeTopOfBook({
+      bestBid: 75810.5,
+      bestAsk: 75809.0,
+      maxBookSpreadBps: 200,
+    });
+    assert.equal(crossed.valid, false);
+    assert.equal(crossed.crossed, true);
+    assert.equal(crossed.spreadBps, null);
+
+    const oneSided = sanitizeTopOfBook({
+      bestBid: 75800.0,
+      bestAsk: null,
+      maxBookSpreadBps: 200,
+    });
+    assert.equal(oneSided.valid, false);
+    assert.equal(oneSided.oneSided, true);
+
+    const healthy = sanitizeTopOfBook({
+      bestBid: 75800.0,
+      bestAsk: 75807.58,
+      maxBookSpreadBps: 50,
+    });
+    assert.equal(healthy.valid, true);
+    assert.equal(healthy.crossed, false);
+    assert.ok(healthy.spreadBps !== null && Math.abs(healthy.spreadBps - 1.0) < 0.01);
+  });
+
+  it("Issue #14 Fix: SerializedNonceAllocator enforces maxInFlight inside mutex and prevents duplicate nonces during resync()", async () => {
+    let chainNonce = 10;
+    const alloc = new SerializedNonceAllocator(async () => chainNonce, 2);
+
+    const n1 = await alloc.acquire();
+    const n2 = await alloc.acquire();
+    assert.deepEqual([n1, n2], [10, 11]);
+    assert.equal(alloc.currentInFlight, 2);
+
+    // A 3rd concurrent acquire must wait until a slot is released
+    let thirdResolved = false;
+    const thirdPromise = alloc.acquire().then((n) => {
+      thirdResolved = true;
+      return n;
+    });
+    await new Promise((r) => setTimeout(r, 15));
+    assert.equal(thirdResolved, false, "3rd acquire must block while inFlight === maxInFlight (2)");
+
+    // Simulate concurrent resync returning stale chainNonce=10 before tx 10 & 11 mine
+    const resyncPromise = alloc.resync();
+    alloc.releaseSlot();
+    const n3 = await thirdPromise;
+    await resyncPromise;
+
+    assert.equal(n3, 12, "Allocator must never rewind or emit duplicate nonce 10 during mid-flight resync");
+    alloc.releaseSlot();
+    alloc.releaseSlot();
+  });
+
+  it("Issue #15 Fix: computeExactLiquidationPrice returns null (not 0n/$0 sentinel) on unliquidatable over-collateralized longs", () => {
+    const overCollatLong = computeExactLiquidationPrice({
+      signedSizeRaw: parseDecimalToRaw("1", 8),
+      sizeDecimals: 8,
+      entryPriceRaw: parseDecimalToRaw("75000", 18),
+      markPriceRaw: parseDecimalToRaw("75000", 18),
+      priceDecimals: 18,
+      accountEquityRaw: parseDecimalToRaw("80000", 18), // >100% equity backing
+      maintenanceMarginBps: 125,
+    });
+
+    assert.equal(overCollatLong.liquidationPriceRaw, null);
+    assert.equal(overCollatLong.liquidationPriceHuman, null);
+    assert.equal(overCollatLong.distanceToLiqBps, null);
+    assert.equal(overCollatLong.isAtRisk, false);
+  });
+
+  it("Issue #16 Fix: evaluateFundingFreshness snaps overdue lazy nextFundingAt forward and returns known=false on RPC failure", () => {
+    const overdue = evaluateFundingFreshness({
+      rpcSucceeded: true,
+      lastFundingUpdateAtSec: 1_700_000_000n,
+      fundingIntervalSec: 3600,
+      nowSec: 1_700_017_247n, // 4h47m after last settlement
+      rateX18: 500_000_000_000_000n,
+      openInterestRaw: 100n,
+    });
+    assert.equal(overdue.known, true);
+    assert.equal(overdue.fundingOverdue, true);
+    assert.equal(overdue.stale, true);
+    assert.ok(
+      overdue.effectiveNextFundingAtSec !== null &&
+        overdue.effectiveNextFundingAtSec > 1_700_017_247n,
+      "effectiveNextFundingAtSec must snap ahead of nowSec on lazily-settled pools",
+    );
+
+    const rpcError = evaluateFundingFreshness({
+      rpcSucceeded: false,
+    });
+    assert.equal(rpcError.known, false);
+    assert.equal(rpcError.rateX18, null);
   });
 
   it("Issue #3 Fix & Live Hideki RPC Integration: safeGetStopFeeSomi handles null stopRegistry (ADLT-PERP) and reads live fee on valid registry", async () => {
